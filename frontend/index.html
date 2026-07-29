@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tech Support Portal</title>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 50px; display: flex; justify-content: center; }
+        .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: 400px; }
+        h2 { color: #333; }
+        label { display: block; margin-top: 15px; color: #555; }
+        input, textarea { width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { background-color: #28a745; color: white; border: none; padding: 12px; width: 100%; margin-top: 20px; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        button:hover { background-color: #218838; }
+        #response-message { margin-top: 15px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Create Support Ticket</h2>
+    <form id="ticket-form">
+        <label for="subject">Subject:</label>
+        <input type="text" id="subject" required>
+
+        <label for="description">Description:</label>
+        <textarea id="description" rows="4" required></textarea>
+
+        <button type="submit">Submit Ticket</button>
+    </form>
+    <p id="response-message"></p>
+</div>
+
+<script>
+    document.getElementById('ticket-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const subject = document.getElementById('subject').value;
+        const description = document.getElementById('description').value;
+        const messageElement = document.getElementById('response-message');
+        
+        messageElement.style.color = '#555';
+        messageElement.textContent = 'Submitting ticket...';
+
+        try {
+            // API Gateway 
+const response = await fetch('https://w2k9yhms53.execute-api.us-east-1.amazonaws.com/prod/', {
+    method: 'POST',
+    headers: {
+        'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ subject, description })
+});
+
+            const data = await response.json();
+
+            if (response.ok) {
+                messageElement.style.color = 'green';
+                messageElement.textContent = 'Ticket created successfully!';
+                document.getElementById('ticket-form').reset();
+            } else {
+                messageElement.style.color = 'red';
+                messageElement.textContent = 'Error: ' + (data.error || 'Failed to create ticket');
+            }
+        } catch (error) {
+            messageElement.style.color = 'red';
+            messageElement.textContent = 'Network error: ' + error.message;
+        }
+    });
+</script>
+
+</body>
+</html>
