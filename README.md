@@ -66,6 +66,9 @@ Based on the AWS Pricing Calculator, assuming low-to-moderate ticket volume with
 ```text
 serverless-tech-support-portal/
 │
+├── .github/
+│   └── workflows/
+│       └── deploy.yml          # GitHub Actions CI/CD automated deployment pipeline
 ├── app.py                      # CDK App entry point
 ├── cdk.json                    # CDK toolkit configuration
 ├── requirements.txt            # Python dependencies
@@ -73,9 +76,6 @@ serverless-tech-support-portal/
 │   └── serverless_tech_support_portal_stack.py  # Main infrastructure stack
 └── frontend/
     └── index.html              # Static web interface for ticket submission
-```
-
----
 
 ## Setup & Deployment Instructions
 
@@ -83,6 +83,9 @@ serverless-tech-support-portal/
 * Python 3.11+ installed locally.
 * Node.js and AWS CDK CLI installed globally (`npm install -g aws-cdk`).
 * Active AWS account credentials configured via `aws configure`.
+
+## Automated Deployment (CI/CD)
+This repository uses GitHub Actions for automated deployments. Any code pushed to the main branch automatically triggers the pipeline, authenticates with AWS via Secrets, and executes cdk deploy
 
 ### Step-by-Step Deployment
 1. **Clone the Repository:**
@@ -120,7 +123,7 @@ Integrate Amazon Cognito for real user authentication and secure identity manage
 
 Add Stripe payment gateway support for paid support requests.
 
-Set up a full CI/CD pipeline using GitHub Actions for automated deployments.
+
 
 ---
 
