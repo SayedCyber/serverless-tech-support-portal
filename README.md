@@ -1,58 +1,129 @@
+# Serverless Tech Support Portal
+# Sayed Amini 
+# Washington University - Cloud Computing
 
-# Welcome to your CDK Python project!
+## Project Overview
+This repository contains the capstone project for the Introduction to Cloud Computing course (Washington University in St. Louis, MACS Program, Summer 2026). The project implements a fully functional, event-driven **Serverless Tech Support Portal** designed to allow users to submit and track support tickets seamlessly without provisioning or managing underlying servers.
 
-This is a blank project for CDK development with Python.
+---
+## Architecture
 
-The `cdk.json` file tells the CDK Toolkit how to execute your app.
+                    ┌─────────────────────────────┐
+   User   ────────▶ │   S3 Static Site (frontend)  │
+                    └──────────────┬───────────────┘
+                                   │ HTTPS
+                                   ▼
+                    ┌──────────────────────────────┐
+                    │       Amazon API Gateway     │
+                    └──────────────┬───────────────┘
+                                   │
+                    ┌──────────────▼───────────────┐
+                    │       AWS Lambda (Python)    │
+                    └──────────────┬───────────────┘
+                                   │
+                    ┌──────────────▼───────────────┐
+                    │      Amazon DynamoDB Table   │
+                    └──────────────┬───────────────┘
+                                   │
+                    ┌──────────────▼───────────────┐
+                    │       SQS Queue & SNS        │
+                    └──────────────────────────────┘
+##  System Design
+The application is built entirely on native AWS serverless components managed through **AWS CDK (Python)**. 
 
-This project is set up like a standard Python project.  The initialization
-process also creates a virtualenv within this project, stored under the `.venv`
-directory.  To create the virtualenv it assumes that there is a `python3`
-(or `python` for Windows) executable in your path with access to the `venv`
-package. If for any reason the automatic creation of the virtualenv fails,
-you can create the virtualenv manually.
+* **Frontend:** Hosted on **Amazon S3** as a static website.
+* **API Gateway:** Acts as the secure HTTP entry point, managing CORS headers and routing incoming requests.
+* **Compute:** **AWS Lambda** (Python 3.11 runtime) processes ticket creation and queries. It scales automatically to zero and handles variable traffic without idle server costs.
+* **Database:** **Amazon DynamoDB** stores ticket records using a fast key-value schema (`ticket_id` partition key) configured with on-demand billing (`PAY_PER_REQUEST`).
+* **Asynchronous Messaging:** **Amazon SQS** queues background tasks, and **Amazon SNS** handles alert notifications for new support requests.
 
-To manually create a virtualenv on MacOS and Linux:
+---
 
+## Key Architecture Decisions (ADR Summary)
+
+| Component | Choice | Alternative Considered & Rejected | Justification |
+| :--- | :--- | :--- | :--- |
+| **Compute** | AWS Lambda | ECS Fargate | Lambda scales automatically to zero, eliminating fixed overhead and idle costs for intermittent ticket workloads. |
+| **Database** | Amazon DynamoDB | RDS PostgreSQL | Tickets follow simple key-value patterns. DynamoDB provides instant serverless NoSQL scaling with zero schema migration overhead. |
+| **IaC** | AWS CDK (Python) | Terraform | Aligns fully with the course codebase language, utilizing higher-level constructs to define infrastructure directly. |
+| **Auth / SaaS** | *Deferred (MVP)* | Cognito / Stripe | Excluded from the 1-week MVP scope to focus cleanly on serverless event-driven architecture and eliminate PCI-DSS security risks. |
+
+---
+
+## Cost Estimate
+Based on the AWS Pricing Calculator, assuming low-to-moderate ticket volume within the AWS Free Tier limits:
+
+* **Amazon API Gateway:** $0.00 (Within 1M free requests/mo tier)
+* **AWS Lambda:** $0.00 (Within 1M free requests tier)
+* **Amazon DynamoDB:** $0.00 (Within 25 GB storage tier)
+* **Amazon SQS & SNS:** $0.40
+* **Amazon S3:** $0.00
+* **Total Estimated Monthly Cost:** **~$4.80 / month** (Fully covered under AWS Free Tier)
+
+---
+
+## Repository Structure
+```text
+serverless-tech-support-portal/
+│
+├── app.py                      # CDK App entry point
+├── cdk.json                    # CDK toolkit configuration
+├── requirements.txt            # Python dependencies
+├── serverless_tech_support_portal/
+│   └── serverless_tech_support_portal_stack.py  # Main infrastructure stack
+└── frontend/
+    └── index.html              # Static web interface for ticket submission
 ```
-$ python -m venv .venv
-```
 
-After the init process completes and the virtualenv is created, you can use the following
-step to activate your virtualenv.
+---
 
-```
-$ source .venv/bin/activate
-```
+## Setup & Deployment Instructions
 
-If you are a Windows platform, you would activate the virtualenv like this:
+### Prerequisites
+* Python 3.11+ installed locally.
+* Node.js and AWS CDK CLI installed globally (`npm install -g aws-cdk`).
+* Active AWS account credentials configured via `aws configure`.
 
-```
-% .venv\Scripts\activate.bat
-```
+### Step-by-Step Deployment
+1. **Clone the Repository:**
+   ```bash
+   git clone https://github.com/sayedcyber/serverless-tech-support-portal.git
+   cd serverless-tech-support-portal
+   ```
 
-Once the virtualenv is activated, you can install the required dependencies.
+2. **Activate the Python Virtual Environment:**
+   * On Windows (PowerShell):
+     ```bash
+     .venv\Scripts\Activate
+     ```
+ 
 
-```
-$ pip install -r requirements.txt
-```
+3. **Install Dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-At this point you can now synthesize the CloudFormation template for this code.
+4. **Synthesize and Deploy the Stack:**
+   ```bash
+   cdk deploy
+   ```
 
-```
-$ cdk synth
-```
+5. **Access the Application:**
+   * Once deployment completes successfully, copy the `SiteURL` output from the terminal and open it in your browser to start submitting support tickets.
 
-To add additional dependencies, for example other CDK libraries, just add
-them to your `requirements.txt` file and rerun the `python -m pip install -r requirements.txt`
-command.
+## Cost
+Extremely cost-effective, operating almost entirely within the AWS Free Tier since it utilizes serverless technologies like Lambda, S3, API Gateway, and DynamoDB on-demand
 
-## Useful commands
 
- * `cdk ls`          list all stacks in the app
- * `cdk synth`       emits the synthesized CloudFormation template
- * `cdk deploy`      deploy this stack to your default AWS account/region
- * `cdk diff`        compare deployed stack with current state
- * `cdk docs`        open CDK documentation
+## Future Improvements
+Integrate Amazon Cognito for real user authentication and secure identity management.
 
-Enjoy!
+Add Stripe payment gateway support for paid support requests.
+
+Set up a full CI/CD pipeline using GitHub Actions for automated deployments.
+
+---
+
+## Author
+* **Sayed Amini**  
+* Washington University in St. Louis — MACS Program (Summer 2026)
