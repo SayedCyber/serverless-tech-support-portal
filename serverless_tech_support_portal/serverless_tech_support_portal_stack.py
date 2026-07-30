@@ -30,13 +30,13 @@ class ServerlessTechSupportPortalStack(Stack):
             removal_policy=RemovalPolicy.DESTROY
         )
 
-        # 1.1 Create SQS Queue for asynchronous background tasks (as outlined in ADR)
+        # 1.1 Create SQS Queue for asynchronous background tasks 
         ticket_queue = sqs.Queue(
             self, "TicketQueue",
             removal_policy=RemovalPolicy.DESTROY
         )
 
-        # 1.2 Create SNS Topic for notifications (as outlined in ADR)
+        # 1.2 Create SNS Topic for notifications 
         ticket_topic = sns.Topic(
             self, "TicketTopic",
             display_name="Support Ticket Notifications"
