@@ -10,7 +10,8 @@ from aws_cdk import (
     aws_s3 as s3,
     aws_s3_deployment as s3_deploy,
     aws_sqs as sqs,
-    aws_sns as sns
+    aws_sns as sns,
+    aws_cognito as cognito,
 )
 from constructs import Construct
 
@@ -40,6 +41,25 @@ class ServerlessTechSupportPortalStack(Stack):
         ticket_topic = sns.Topic(
             self, "TicketTopic",
             display_name="Support Ticket Notifications"
+        )
+
+        # 1.3 Create Cognito User Pool for user authentication
+        user_pool = cognito.UserPool(
+            self, "SupportPortalUserPool",
+            user_pool_name="support-portal-users",
+            self_sign_up_enabled=True,  # Allow users to sign up
+            sign_in_aliases=cognito.SignInAliases(email=True),  # Sign in using email
+            auto_verify=cognito.AutoVerifiedAttrs(email=True),
+            removal_policy=RemovalPolicy.DESTROY
+        )
+
+        # 1.4 Create App Client for frontend communication
+        user_pool_client = user_pool.add_client(
+            "WebAppClient",
+            auth_flows=cognito.AuthFlow(
+                user_password=True,
+                user_srp=True
+            )
         )
 
         # 2. Create Lambda function with full logic to read/write tickets
@@ -98,7 +118,7 @@ def handler(event, context):
                 'statusCode': 201,
                 'headers': {
                     'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Headers': 'Content-Type',
+                    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
                     'Access-Control-Allow-Methods': 'OPTIONS,POST,GET'
                 },
                 'body': json.dumps({'message': 'Ticket created successfully', 'ticket': ticket_data})
@@ -108,7 +128,7 @@ def handler(event, context):
                 'statusCode': 500,
                 'headers': {
                     'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Headers': 'Content-Type',
+                    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
                     'Access-Control-Allow-Methods': 'OPTIONS,POST,GET'
                 },
                 'body': json.dumps({'error': str(e)})
@@ -119,7 +139,7 @@ def handler(event, context):
         'statusCode': 200,
         'headers': {
             'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'Content-Type',
+            'Access-Control-Allow-Headers': 'Content-Type,Authorization',
             'Access-Control-Allow-Methods': 'OPTIONS,POST,GET'
         },
         'body': json.dumps({'message': 'Welcome to Tech Support Portal API. Use POST to create a ticket.'})
@@ -138,7 +158,7 @@ def handler(event, context):
         # Pass environment variables to the Lambda function
         my_lambda.add_environment("TABLE_NAME", table.table_name)
         my_lambda.add_environment("QUEUE_URL", ticket_queue.queue_url)
-        my_lambda.add_environment("TOPIC_ARN", ticket_topic.topic_arn)
+        my_lambda.add_environment("TOPIC_ARN", topic_topic.topic_arn)
 
         # 3. Create API Gateway to expose the Lambda function via HTTP with CORS enabled
         api = apigw.LambdaRestApi(
@@ -150,6 +170,12 @@ def handler(event, context):
                 allow_methods=apigw.Cors.ALL_METHODS,
                 allow_headers=["Content-Type", "Authorization"]
             )
+        )
+
+        # 3.1 Create Cognito Authorizer for API Gateway security
+        auth = apigw.CognitoUserPoolsAuthorizer(
+            self, "PortalAuthorizer",
+            cognito_user_pools=[user_pool]
         )
 
         # 4. Create an S3 bucket to host the static website frontend
@@ -177,9 +203,21 @@ def handler(event, context):
             destination_bucket=site_bucket
         )
 
-        # 6. Output the public website URL after deployment
+        # 6. Output the public website URL, User Pool ID, and Client ID after deployment
         CfnOutput(
             self, "SiteURL",
             value=site_bucket.bucket_website_url,
             description="The public URL of the static tech support portal"
+        )
+        
+        CfnOutput(
+            self, "UserPoolIdOutput",
+            value=user_pool.user_pool_id,
+            description="Cognito User Pool ID"
+        )
+
+        CfnOutput(
+            self, "ClientIdOutput",
+            value=user_pool_client.user_pool_client_id,
+            description="Cognito Client ID"
         )
