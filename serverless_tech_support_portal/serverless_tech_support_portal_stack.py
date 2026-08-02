@@ -155,10 +155,10 @@ def handler(event, context):
         ticket_queue.grant_send_messages(my_lambda)
         ticket_topic.grant_publish(my_lambda)
 
-        # Pass environment variables to the Lambda function
+      # Pass environment variables to the Lambda function
         my_lambda.add_environment("TABLE_NAME", table.table_name)
         my_lambda.add_environment("QUEUE_URL", ticket_queue.queue_url)
-        my_lambda.add_environment("TOPIC_ARN", topic_arn=ticket_topic.topic_arn)
+        my_lambda.add_environment("TOPIC_ARN", ticket_topic.topic_arn)
 
         # 3. Create Cognito Authorizer for API Gateway
         auth = apigw.CognitoUserPoolsAuthorizer(
