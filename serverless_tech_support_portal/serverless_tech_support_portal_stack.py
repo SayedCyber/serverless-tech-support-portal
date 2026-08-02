@@ -158,7 +158,7 @@ def handler(event, context):
         # Pass environment variables to the Lambda function
         my_lambda.add_environment("TABLE_NAME", table.table_name)
         my_lambda.add_environment("QUEUE_URL", ticket_queue.queue_url)
-        my_lambda.add_environment("TOPIC_ARN", topic_topic.topic_arn)
+        my_lambda.add_environment("TOPIC_ARN", ticket_topic.topic_arn)
 
         # 3. Create API Gateway to expose the Lambda function via HTTP with CORS enabled
         api = apigw.LambdaRestApi(
