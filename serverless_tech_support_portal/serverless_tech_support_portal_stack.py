@@ -49,6 +49,7 @@ class ServerlessTechSupportPortalStack(Stack):
             removal_policy=RemovalPolicy.DESTROY
         )
 
+        # اضافه کردن دامنه کوگنیتو برای فعال‌سازی Hosted UI
         user_pool.add_domain(
             "CognitoDomain",
             cognito_domain=cognito.CognitoDomainOptions(
@@ -56,23 +57,7 @@ class ServerlessTechSupportPortalStack(Stack):
             )
         )
 
-        site_bucket = s3.Bucket(
-            self, "TicketSiteBucket",
-            website_index_document="index.html",
-            public_read_access=True,
-            block_public_access=s3.BlockPublicAccess(
-                block_public_acls=False,
-                block_public_policy=False,
-                ignore_public_acls=False,
-                restrict_public_buckets=False
-            ),
-            removal_policy=RemovalPolicy.DESTROY,
-            auto_delete_objects=True
-        )
-
-        # استفاده از آدرس واقعی و اختصاصی سطل S3 به صورت خودکار برای کوگنیتو
-        site_url = site_bucket.bucket_website_url
-
+        # تنظیم کلاینت برای پشتیبانی از Hosted UI و روش Authorization Code
         user_pool_client = user_pool.add_client(
             "WebAppClient",
             auth_flows=cognito.AuthFlow(
@@ -85,8 +70,8 @@ class ServerlessTechSupportPortalStack(Stack):
                 ),
                 scopes=[cognito.OAuthScope.EMAIL, cognito.OAuthScope.OPENID, cognito.OAuthScope.PROFILE],
                 supported_identity_providers=[cognito.OAuthProvider.COGNITO],
-                callback_urls=["http://localhost:3000/", site_url],
-                logout_urls=["http://localhost:3000/", site_url]
+                callback_urls=["http://localhost:3000/", "https://d123456789.cloudfront.net/"], # آدرس سایت خود را اینجا قرار دهید
+                logout_urls=["http://localhost:3000/", "https://d123456789.cloudfront.net/"]
             )
         )
 
@@ -198,6 +183,20 @@ def handler(event, context):
             )
         )
 
+        site_bucket = s3.Bucket(
+            self, "TicketSiteBucket",
+            website_index_document="index.html",
+            public_read_access=True,
+            block_public_access=s3.BlockPublicAccess(
+                block_public_acls=False,
+                block_public_policy=False,
+                ignore_public_acls=False,
+                restrict_public_buckets=False
+            ),
+            removal_policy=RemovalPolicy.DESTROY,
+            auto_delete_objects=True
+        )
+
         current_dir = os.path.dirname(__file__)
         frontend_path = os.path.join(current_dir, "..", "frontend")
         
@@ -209,7 +208,7 @@ def handler(event, context):
 
         CfnOutput(
             self, "SiteURL",
-            value=site_url,
+            value=site_bucket.bucket_website_url,
             description="The public URL of the static tech support portal"
         )
         
@@ -224,4 +223,3 @@ def handler(event, context):
             value=user_pool_client.user_pool_client_id,
             description="Cognito Client ID"
         )
-```[cite: 1]
