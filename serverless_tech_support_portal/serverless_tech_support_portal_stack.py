@@ -10,8 +10,7 @@ from aws_cdk import (
     aws_s3 as s3,
     aws_s3_deployment as s3_deploy,
     aws_sqs as sqs,
-    aws_sns as sns,
-    aws_cognito as cognito,
+    aws_sns as sns
 )
 from constructs import Construct
 
@@ -20,6 +19,7 @@ class ServerlessTechSupportPortalStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
+        # 1. Create DynamoDB table for tickets
         table = dynamodb.Table(
             self, "TicketsTable",
             partition_key=dynamodb.Attribute(
@@ -30,51 +30,19 @@ class ServerlessTechSupportPortalStack(Stack):
             removal_policy=RemovalPolicy.DESTROY
         )
 
+        # 1.1 Create SQS Queue for asynchronous background tasks 
         ticket_queue = sqs.Queue(
             self, "TicketQueue",
             removal_policy=RemovalPolicy.DESTROY
         )
 
+        # 1.2 Create SNS Topic for notifications 
         ticket_topic = sns.Topic(
             self, "TicketTopic",
             display_name="Support Ticket Notifications"
         )
 
-        user_pool = cognito.UserPool(
-            self, "SupportPortalUserPool",
-            user_pool_name="support-portal-users",
-            self_sign_up_enabled=True,
-            sign_in_aliases=cognito.SignInAliases(email=True),
-            auto_verify=cognito.AutoVerifiedAttrs(email=True),
-            removal_policy=RemovalPolicy.DESTROY
-        )
-
-        # اضافه کردن دامنه کوگنیتو برای فعال‌سازی Hosted UI
-        user_pool.add_domain(
-            "CognitoDomain",
-            cognito_domain=cognito.CognitoDomainOptions(
-                domain_prefix="support-portal-users-785157631204"
-            )
-        )
-
-        # تنظیم کلاینت برای پشتیبانی از Hosted UI و روش Authorization Code
-        user_pool_client = user_pool.add_client(
-            "WebAppClient",
-            auth_flows=cognito.AuthFlow(
-                user_password=True,
-                user_srp=True
-            ),
-            oauth=cognito.OAuthSettings(
-                flows=cognito.OAuthFlows(
-                    authorization_code_grant=True
-                ),
-                scopes=[cognito.OAuthScope.EMAIL, cognito.OAuthScope.OPENID, cognito.OAuthScope.PROFILE],
-                supported_identity_providers=[cognito.OAuthProvider.COGNITO],
-                callback_urls=["http://localhost:3000/", "https://d123456789.cloudfront.net/"], # آدرس سایت خود را اینجا قرار دهید
-                logout_urls=["http://localhost:3000/", "https://d123456789.cloudfront.net/"]
-            )
-        )
-
+        # 2. Create Lambda function with full logic to read/write tickets
         my_lambda = _lambda.Function(
             self, "SupportLambdaFunction",
             runtime=_lambda.Runtime.PYTHON_3_11,
@@ -96,6 +64,7 @@ topic_arn = os.environ.get('TOPIC_ARN')
 def handler(event, context):
     http_method = event.get('httpMethod', 'GET')
     
+    # If POST request, create a new ticket
     if http_method == 'POST':
         try:
             body = json.loads(event.get('body', '{}'))
@@ -107,14 +76,17 @@ def handler(event, context):
                 'status': 'OPEN'
             }
             
+            # Save to DynamoDB
             table.put_item(Item=ticket_data)
             
+            # Send message to SQS (Async background processing)
             if queue_url:
                 sqs.send_message(
                     QueueUrl=queue_url,
                     MessageBody=json.dumps(ticket_data)
                 )
             
+            # Publish notification to SNS
             if topic_arn:
                 sns.publish(
                     TopicArn=topic_arn,
@@ -126,7 +98,7 @@ def handler(event, context):
                 'statusCode': 201,
                 'headers': {
                     'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+                    'Access-Control-Allow-Headers': 'Content-Type',
                     'Access-Control-Allow-Methods': 'OPTIONS,POST,GET'
                 },
                 'body': json.dumps({'message': 'Ticket created successfully', 'ticket': ticket_data})
@@ -136,17 +108,18 @@ def handler(event, context):
                 'statusCode': 500,
                 'headers': {
                     'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+                    'Access-Control-Allow-Headers': 'Content-Type',
                     'Access-Control-Allow-Methods': 'OPTIONS,POST,GET'
                 },
                 'body': json.dumps({'error': str(e)})
             }
             
+    # If GET request, return a welcome message or instructions
     return {
         'statusCode': 200,
         'headers': {
             'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+            'Access-Control-Allow-Headers': 'Content-Type',
             'Access-Control-Allow-Methods': 'OPTIONS,POST,GET'
         },
         'body': json.dumps({'message': 'Welcome to Tech Support Portal API. Use POST to create a ticket.'})
@@ -155,19 +128,19 @@ def handler(event, context):
             handler="index.handler"
         )
 
+        # Give Lambda function permissions to read/write to the DynamoDB table
         table.grant_read_write_data(my_lambda)
+
+        # Give Lambda permissions to send messages to SQS and publish to SNS
         ticket_queue.grant_send_messages(my_lambda)
         ticket_topic.grant_publish(my_lambda)
 
+        # Pass environment variables to the Lambda function
         my_lambda.add_environment("TABLE_NAME", table.table_name)
         my_lambda.add_environment("QUEUE_URL", ticket_queue.queue_url)
         my_lambda.add_environment("TOPIC_ARN", ticket_topic.topic_arn)
 
-        auth = apigw.CognitoUserPoolsAuthorizer(
-            self, "PortalAuthorizer",
-            cognito_user_pools=[user_pool]
-        )
-
+        # 3. Create API Gateway to expose the Lambda function via HTTP with CORS enabled
         api = apigw.LambdaRestApi(
             self, "SupportApi",
             handler=my_lambda,
@@ -176,13 +149,10 @@ def handler(event, context):
                 allow_origins=apigw.Cors.ALL_ORIGINS,
                 allow_methods=apigw.Cors.ALL_METHODS,
                 allow_headers=["Content-Type", "Authorization"]
-            ),
-            default_method_options=apigw.MethodOptions(
-                authorizer=auth,
-                authorization_type=apigw.AuthorizationType.COGNITO
             )
         )
 
+        # 4. Create an S3 bucket to host the static website frontend
         site_bucket = s3.Bucket(
             self, "TicketSiteBucket",
             website_index_document="index.html",
@@ -197,6 +167,7 @@ def handler(event, context):
             auto_delete_objects=True
         )
 
+        # 5. Automatically deploy from the root frontend folder correctly
         current_dir = os.path.dirname(__file__)
         frontend_path = os.path.join(current_dir, "..", "frontend")
         
@@ -206,20 +177,9 @@ def handler(event, context):
             destination_bucket=site_bucket
         )
 
+        # 6. Output the public website URL after deployment
         CfnOutput(
             self, "SiteURL",
             value=site_bucket.bucket_website_url,
             description="The public URL of the static tech support portal"
-        )
-        
-        CfnOutput(
-            self, "UserPoolIdOutput",
-            value=user_pool.user_pool_id,
-            description="Cognito User Pool ID"
-        )
-
-        CfnOutput(
-            self, "ClientIdOutput",
-            value=user_pool_client.user_pool_client_id,
-            description="Cognito Client ID"
         )
