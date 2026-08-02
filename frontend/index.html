@@ -44,8 +44,8 @@
 <script>
     // Replace these values with your CDK deployment outputs
     const poolData = {
-        UserPoolId: 'YOUR_USER_POOL_ID', // Insert UserPoolIdOutput here
-        ClientId: 'YOUR_CLIENT_ID'       // Insert ClientIdOutput here
+        UserPoolId: 'us-east-1_ZVVHgGJTF', 
+        ClientId: '4i44s2377pt8954r9nma4v03ej'      
     };
 
     const userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
@@ -99,7 +99,7 @@
     async function createTicket() {
         const subject = document.getElementById('subject').value;
         const description = document.getElementById('description').value;
-        const apiURL = 'YOUR_API_GATEWAY_URL'; // Insert your API Gateway endpoint URL here
+        const apiURL = 'https://w2k9yhms53.execute-api.us-east-1.amazonaws.com/prod/';
 
         try {
             const response = await fetch(apiURL, {
