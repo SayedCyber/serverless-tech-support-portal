@@ -12,32 +12,24 @@
         button:hover { background-color: #0056b3; }
         .hidden { display: none; }
         .success { color: green; }
+        .error { color: red; }
+        .header-auth { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; font-size: 14px; }
     </style>
 </head>
 <body>
 
 <div class="container">
+    <div class="header-auth" id="header-auth"></div>
+
     <h2>Tech Support Portal</h2>
 
-    <!-- Login / Register Section -->
     <div id="auth-section">
-        <h3>Login / Register</h3>
-        <input type="email" id="email" placeholder="Email">
-        <input type="password" id="password" placeholder="Password">
-        <button onclick="signUp()">Register</button>
-        <button onclick="signIn()">Login</button>
+        <h3>Authentication Required</h3>
+        <p>Please sign in using your account to submit support tickets.</p>
+        <button onclick="signIn()">Sign In / Register</button>
         <p id="auth-msg" class="success"></p>
     </div>
 
-    <!-- Confirm Registration Section -->
-    <div id="confirm-section" class="hidden">
-        <h3>Confirm Your Account</h3>
-        <input type="text" id="verification-code" placeholder="Enter Code from Email">
-        <button onclick="confirmAccount()">Confirm Account</button>
-        <p id="confirm-msg" class="success"></p>
-    </div>
-
-    <!-- Ticket Section (Hidden until logged in) -->
     <div id="ticket-section" class="hidden">
         <h3>Create Support Ticket</h3>
         <input type="text" id="subject" placeholder="Subject">
@@ -47,104 +39,129 @@
     </div>
 </div>
 
-<!-- AWS SDK for Cognito and API calls -->
-<script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@5.2.11/dist/amazon-cognito-identity.min.js"></script>
 <script>
-    const poolData = {
-        UserPoolId: 'us-east-1_ZVVHgGJTF', 
-        ClientId: '4i44s2377pt8954r9nma4v03ej'      
-    };
+    const COGNITO_DOMAIN = "https://us-east-1zvvhggjtf.auth.us-east-1.amazoncognito.com";
+    const COGNITO_CLIENT_ID = "4i44s2377pt8954r9nma4v03ej"; 
+    const REDIRECT_URI = window.location.origin + window.location.pathname;
+    const API_URL = "https://w2k9yhms53.execute-api.us-east-1.amazonaws.com/prod/";
 
-    const userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
-    let idToken = '';
-
-    function signUp() {
-        const email = document.getElementById('email').value;
-        const password = document.getElementById('password').value;
-
-        const attributeList = [
-            new AmazonCognitoIdentity.CognitoUserAttribute({ Name: 'email', Value: email })
-        ];
-
-        userPool.signUp(email, password, attributeList, null, (err, result) => {
-            if (err) {
-                document.getElementById('auth-msg').innerText = err.message || JSON.stringify(err);
-                return;
-            }
-            document.getElementById('auth-msg').innerText = 'Registration successful! Please enter your code below.';
-            document.getElementById('auth-section').classList.add('hidden');
-            document.getElementById('confirm-section').classList.remove('hidden');
-        });
+    function getStoredToken() {
+        return sessionStorage.getItem("support_access_token");
     }
 
-    function confirmAccount() {
-        const email = document.getElementById('email').value;
-        const code = document.getElementById('verification-code').value;
-
-        const userData = { Username: email, Pool: userPool };
-        const cognitoUser = new AmazonCognitoIdentity.CognitoUser(userData);
-
-        cognitoUser.confirmRegistration(code, true, (err, result) => {
-            if (err) {
-                document.getElementById('confirm-msg').innerText = err.message || JSON.stringify(err);
-                return;
-            }
-            document.getElementById('confirm-msg').innerText = 'Account confirmed successfully! You can now login.';
-            setTimeout(() => {
-                document.getElementById('confirm-section').classList.add('hidden');
-                document.getElementById('auth-section').classList.remove('hidden');
-            }, 2000);
-        });
+    function getStoredEmail() {
+        return sessionStorage.getItem("support_email");
     }
 
     function signIn() {
-        const email = document.getElementById('email').value;
-        const password = document.getElementById('password').value;
-
-        const authenticationDetails = new AmazonCognitoIdentity.AuthenticationDetails({
-            Username: email,
-            Password: password,
-        });
-
-        const userData = { Username: email, Pool: userPool };
-        const cognitoUser = new AmazonCognitoIdentity.CognitoUser(userData);
-
-        cognitoUser.authenticateUser(authenticationDetails, {
-            onSuccess: (result) => {
-                idToken = result.getIdToken().getJwtToken();
-                document.getElementById('auth-msg').innerText = 'Login successful!';
-                document.getElementById('auth-section').classList.add('hidden');
-                document.getElementById('ticket-section').classList.remove('hidden');
-            },
-            onFailure: (err) => {
-                document.getElementById('auth-msg').innerText = err.message || JSON.stringify(err);
-            },
-        });
+        const authUrl = `${COGNITO_DOMAIN}/oauth2/authorize` +
+            `?client_id=${COGNITO_CLIENT_ID}` +
+            `&response_type=code` +
+            `&scope=email+openid+profile` +
+            `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`;
+        window.location.href = authUrl;
     }
+
+    function signOut() {
+        sessionStorage.removeItem("support_access_token");
+        sessionStorage.removeItem("support_email");
+        const logoutUrl = `${COGNITO_DOMAIN}/logout` +
+            `?client_id=${COGNITO_CLIENT_ID}` +
+            `&logout_uri=${encodeURIComponent(REDIRECT_URI)}`;
+        window.location.href = logoutUrl;
+    }
+
+    async function exchangeCodeForToken(code) {
+        const body = new URLSearchParams({
+            grant_type: "authorization_code",
+            client_id: COGNITO_CLIENT_ID,
+            code: code,
+            redirect_uri: REDIRECT_URI,
+        });
+
+        try {
+            const res = await fetch(`${COGNITO_DOMAIN}/oauth2/token`, {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: body.toString(),
+            });
+
+            if (!res.ok) throw new Error("Token exchange failed");
+            const tokens = await res.json();
+
+            const idPayload = JSON.parse(atob(tokens.id_token.split(".")[1]));
+
+            sessionStorage.setItem("support_access_token", tokens.id_token);
+            sessionStorage.setItem("support_email", idPayload.email || "User");
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    function updateUI() {
+        const token = getStoredToken();
+        const email = getStoredEmail();
+        const headerAuth = document.getElementById("header-auth");
+        const authSection = document.getElementById("auth-section");
+        const ticketSection = document.getElementById("ticket-section");
+
+        if (token) {
+            headerAuth.innerHTML = `<span>Signed in as: <b>${email}</b></span> <button onclick="signOut()" style="width:auto; padding:5px 10px; margin:0;">Sign Out</button>`;
+            authSection.classList.add("hidden");
+            ticketSection.classList.remove("hidden");
+        } else {
+            headerAuth.innerHTML = "";
+            authSection.classList.remove("hidden");
+            ticketSection.classList.add("hidden");
+        }
+    }
+
+    window.addEventListener('DOMContentLoaded', async () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const code = urlParams.get('code');
+        
+        if (code) {
+            window.history.replaceState({}, document.title, window.location.pathname);
+            await exchangeCodeForToken(code);
+        }
+        updateUI();
+    });
 
     async function createTicket() {
         const subject = document.getElementById('subject').value;
         const description = document.getElementById('description').value;
-        const apiURL = 'https://w2k9yhms53.execute-api.us-east-1.amazonaws.com/prod/';
+        const token = getStoredToken();
+        const msgEl = document.getElementById('ticket-msg');
+
+        if (!subject || !description) {
+            msgEl.className = "error";
+            msgEl.innerText = "Please fill in all fields.";
+            return;
+        }
 
         try {
-            const response = await fetch(apiURL, {
+            const response = await fetch(API_URL, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': idToken 
+                    'Authorization': token 
                 },
                 body: JSON.stringify({ subject, description })
             });
 
             const data = await response.json();
             if (response.ok) {
-                document.getElementById('ticket-msg').innerText = 'Ticket created successfully!';
+                msgEl.className = "success";
+                msgEl.innerText = 'Ticket created successfully!';
+                document.getElementById('subject').value = '';
+                document.getElementById('description').value = '';
             } else {
-                document.getElementById('ticket-msg').innerText = 'Error: ' + (data.error || 'Failed');
+                msgEl.className = "error";
+                msgEl.innerText = 'Error: ' + (data.error || 'Failed');
             }
         } catch (error) {
-            document.getElementById('ticket-msg').innerText = 'Error: ' + error.message;
+            msgEl.className = "error";
+            msgEl.innerText = 'Error: ' + error.message;
         }
     }
 </script>
