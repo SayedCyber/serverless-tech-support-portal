@@ -6,32 +6,81 @@
     <title>Tech Support Portal</title>
     <style>
         body { font-family: Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 50px; display: flex; justify-content: center; }
-        .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: 400px; }
+        .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: 400px; margin-bottom: 20px; }
         h2 { color: #333; }
         label { display: block; margin-top: 15px; color: #555; }
         input, textarea { width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
         button { background-color: #28a745; color: white; border: none; padding: 12px; width: 100%; margin-top: 20px; border-radius: 4px; cursor: pointer; font-size: 16px; }
         button:hover { background-color: #218838; }
-        #response-message { margin-top: 15px; font-weight: bold; }
+        .hidden { display: none; }
+        #response-message, #auth-message { margin-top: 15px; font-weight: bold; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Create Support Ticket</h2>
-    <form id="ticket-form">
-        <label for="subject">Subject:</label>
-        <input type="text" id="subject" required>
+    <!-- Authentication Section -->
+    <div id="auth-section">
+        <h2>Login</h2>
+        <form id="login-form">
+            <label for="email">Email:</label>
+            <input type="email" id="email" required>
 
-        <label for="description">Description:</label>
-        <textarea id="description" rows="4" required></textarea>
+            <label for="password">Password:</label>
+            <input type="password" id="password" required>
 
-        <button type="submit">Submit Ticket</button>
-    </form>
-    <p id="response-message"></p>
+            <button type="submit">Login</button>
+        </form>
+        <p id="auth-message"></p>
+    </div>
+
+    <!-- Ticket Section (Hidden until user logs in) -->
+    <div id="ticket-section" class="hidden">
+        <h2>Create Support Ticket</h2>
+        <form id="ticket-form">
+            <label for="subject">Subject:</label>
+            <input type="text" id="subject" required>
+
+            <label for="description">Description:</label>
+            <textarea id="description" rows="4" required></textarea>
+
+            <button type="submit">Submit Ticket</button>
+        </form>
+        <p id="response-message"></p>
+    </div>
 </div>
 
 <script>
+    // Store the auth token globally after login
+    let authToken = '';
+
+    // Handle login form submission
+    document.getElementById('login-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        const authMessage = document.getElementById('auth-message');
+
+        // Simple mock login success for testing or connect AWS Amplify / Cognito SDK here
+        if (email && password) {
+            // For testing the UI flow, we simulate getting a token. 
+            // In a real app, use AWS Cognito SDK (AmazonCognitoIdentityServiceProvider) to sign in.
+            authToken = "MOCK_COGNITO_ID_TOKEN"; 
+            
+            authMessage.style.color = 'green';
+            authMessage.textContent = 'Login successful!';
+            
+            // Hide login and show ticket form
+            document.getElementById('auth-section').classList.add('hidden');
+            document.getElementById('ticket-section').classList.remove('hidden');
+        } else {
+            authMessage.style.color = 'red';
+            authMessage.textContent = 'Please enter email and password.';
+        }
+    });
+
+    // Handle ticket form submission
     document.getElementById('ticket-form').addEventListener('submit', async function(e) {
         e.preventDefault();
         
@@ -43,14 +92,15 @@
         messageElement.textContent = 'Submitting ticket...';
 
         try {
-            // API Gateway 
-const response = await fetch('https://w2k9yhms53.execute-api.us-east-1.amazonaws.com/prod/', {
-    method: 'POST',
-    headers: {
-        'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ subject, description })
-});
+            // Send POST request to API Gateway with Authorization header
+            const response = await fetch('https://w2k9yhms53.execute-api.us-east-1.amazonaws.com/prod/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': authToken
+                },
+                body: JSON.stringify({ subject, description })
+            });
 
             const data = await response.json();
 

@@ -10,7 +10,8 @@ from aws_cdk import (
     aws_s3 as s3,
     aws_s3_deployment as s3_deploy,
     aws_sqs as sqs,
-    aws_sns as sns
+    aws_sns as sns,
+    aws_cognito as cognito
 )
 from constructs import Construct
 
@@ -41,6 +42,25 @@ class ServerlessTechSupportPortalStack(Stack):
             self, "TicketTopic",
             display_name="Support Ticket Notifications"
         )
+
+        # 1.3 Create Cognito User Pool for authentication
+        user_pool = cognito.UserPool(
+            self, "SupportUserPool",
+            sign_in_aliases=cognito.SignInAliases(email=True),
+            self_sign_up_enabled=True,
+            removal_policy=RemovalPolicy.DESTROY
+        )
+
+        user_pool_client = user_pool.add_client(
+            "WebClient",
+            auth_flows=cognito.AuthFlow(
+                user_password=True,
+                user_srp=True
+            )
+        )
+
+        CfnOutput(self, "UserPoolId", value=user_pool.user_pool_id)
+        CfnOutput(self, "UserPoolClientId", value=user_pool_client.user_pool_client_id)
 
         # 2. Create Lambda function with full logic to read/write tickets
         my_lambda = _lambda.Function(
@@ -98,7 +118,7 @@ def handler(event, context):
                 'statusCode': 201,
                 'headers': {
                     'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Headers': 'Content-Type',
+                    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
                     'Access-Control-Allow-Methods': 'OPTIONS,POST,GET'
                 },
                 'body': json.dumps({'message': 'Ticket created successfully', 'ticket': ticket_data})
@@ -108,7 +128,7 @@ def handler(event, context):
                 'statusCode': 500,
                 'headers': {
                     'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Headers': 'Content-Type',
+                    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
                     'Access-Control-Allow-Methods': 'OPTIONS,POST,GET'
                 },
                 'body': json.dumps({'error': str(e)})
@@ -119,7 +139,7 @@ def handler(event, context):
         'statusCode': 200,
         'headers': {
             'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Headers': 'Content-Type',
+            'Access-Control-Allow-Headers': 'Content-Type,Authorization',
             'Access-Control-Allow-Methods': 'OPTIONS,POST,GET'
         },
         'body': json.dumps({'message': 'Welcome to Tech Support Portal API. Use POST to create a ticket.'})
@@ -138,9 +158,15 @@ def handler(event, context):
         # Pass environment variables to the Lambda function
         my_lambda.add_environment("TABLE_NAME", table.table_name)
         my_lambda.add_environment("QUEUE_URL", ticket_queue.queue_url)
-        my_lambda.add_environment("TOPIC_ARN", ticket_topic.topic_arn)
+        my_lambda.add_environment("TOPIC_ARN", topic_arn=ticket_topic.topic_arn)
 
-        # 3. Create API Gateway to expose the Lambda function via HTTP with CORS enabled
+        # 3. Create Cognito Authorizer for API Gateway
+        auth = apigw.CognitoUserPoolsAuthorizer(
+            self, "CognitoAuthorizer",
+            cognito_user_pools=[user_pool]
+        )
+
+        # 4. Create API Gateway to expose the Lambda function via HTTP with CORS enabled and secured by Cognito
         api = apigw.LambdaRestApi(
             self, "SupportApi",
             handler=my_lambda,
@@ -149,10 +175,14 @@ def handler(event, context):
                 allow_origins=apigw.Cors.ALL_ORIGINS,
                 allow_methods=apigw.Cors.ALL_METHODS,
                 allow_headers=["Content-Type", "Authorization"]
+            ),
+            default_method_options=apigw.MethodOptions(
+                authorizer=auth,
+                authorization_type=apigw.AuthorizationType.COGNITO
             )
         )
 
-        # 4. Create an S3 bucket to host the static website frontend
+        # 5. Create an S3 bucket to host the static website frontend
         site_bucket = s3.Bucket(
             self, "TicketSiteBucket",
             website_index_document="index.html",
@@ -167,7 +197,7 @@ def handler(event, context):
             auto_delete_objects=True
         )
 
-        # 5. Automatically deploy from the root frontend folder correctly
+        # 6. Automatically deploy from the root frontend folder correctly
         current_dir = os.path.dirname(__file__)
         frontend_path = os.path.join(current_dir, "..", "frontend")
         
@@ -177,7 +207,7 @@ def handler(event, context):
             destination_bucket=site_bucket
         )
 
-        # 6. Output the public website URL after deployment
+        # 7. Output the public website URL after deployment
         CfnOutput(
             self, "SiteURL",
             value=site_bucket.bucket_website_url,
