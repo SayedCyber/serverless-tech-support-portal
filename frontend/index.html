@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tech Support Portal</title>
+    <!-- AWS Cognito Identity JS SDK for real authentication -->
+    <script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@6.3.12/dist/amazon-cognito-identity.min.js"></script>
     <style>
         body { font-family: Arial, sans-serif; background-color: #f4f7f6; margin: 0; padding: 50px; display: flex; justify-content: center; }
         .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); width: 400px; margin-bottom: 20px; }
@@ -21,7 +23,7 @@
 <body>
 
 <div class="container">
-    <!-- Auth Section (Login / Register) -->
+    <!-- Auth Section (Login / Register / Verify) -->
     <div id="auth-section">
         <h2 id="auth-title">Login</h2>
         
@@ -32,6 +34,12 @@
             <label for="password">Password:</label>
             <input type="password" id="password" required>
 
+            <!-- Verification code field (hidden by default) -->
+            <div id="verification-field" class="hidden">
+                <label for="code">Verification Code (Check your email):</label>
+                <input type="text" id="code">
+            </div>
+
             <button type="submit" id="auth-submit-btn">Login</button>
         </form>
 
@@ -39,7 +47,7 @@
         <p id="auth-message"></p>
     </div>
 
-    <!-- Ticket Section (Hidden until user logs in) -->
+    <!-- Ticket Section (Hidden until user logs in with real token) -->
     <div id="ticket-section" class="hidden">
         <h2>Create Support Ticket</h2>
         <form id="ticket-form">
@@ -56,46 +64,124 @@
 </div>
 
 <script>
-    let isRegisterMode = false;
-    let authToken = '';
+    // --- CONFIGURE COGNITO DETAILS ---
+    const poolData = {
+        UserPoolId: 'us-east-1_1sxQgMhRk',
+        ClientId: '6bhm6ttnvbehou5jtrqf320m3o'
+    };
 
-    // Switch between Login and Register views
-    document.getElementById('toggle-auth-mode').addEventListener('click', function() {
-        isRegisterMode = !isRegisterMode;
-        document.getElementById('auth-title').textContent = isRegisterMode ? 'Register' : 'Login';
-        document.getElementById('auth-submit-btn').textContent = isRegisterMode ? 'Register' : 'Login';
-        document.getElementById('toggle-auth-mode').textContent = isRegisterMode ? 'Already have an account? Login' : "Don't have an account? Register";
-        document.getElementById('auth-message').textContent = '';
-    });
+    const userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
+    let authMode = 'login'; // 'login', 'register', or 'verify'
+    let registeredEmail = '';
+    let validIdToken = '';
 
-    // Handle Auth form (Login or Register)
-    document.getElementById('auth-form').addEventListener('submit', function(e) {
-        e.preventDefault();
-        
-        const email = document.getElementById('email').value;
-        const password = document.getElementById('password').value;
-        const authMessage = document.getElementById('auth-message');
+    const authTitle = document.getElementById('auth-title');
+    const authSubmitBtn = document.getElementById('auth-submit-btn');
+    const toggleAuthBtn = document.getElementById('toggle-auth-mode');
+    const verificationField = document.getElementById('verification-field');
+    const authMessage = document.getElementById('auth-message');
 
-        if (isRegisterMode) {
-            // Simulated Register success (Cognito user pool allows self sign up)
-            authMessage.style.color = 'green';
-            authMessage.textContent = 'Registration successful! Now please login.';
-            isRegisterMode = false;
-            document.getElementById('auth-title').textContent = 'Login';
-            document.getElementById('auth-submit-btn').textContent = 'Login';
-            document.getElementById('toggle-auth-mode').textContent = "Don't have an account? Register";
+    // Toggle between modes
+    toggleAuthBtn.addEventListener('click', function() {
+        authMessage.textContent = '';
+        if (authMode === 'login') {
+            authMode = 'register';
+            authTitle.textContent = 'Register';
+            authSubmitBtn.textContent = 'Register';
+            toggleAuthBtn.textContent = 'Already have an account? Login';
+            verificationField.classList.add('hidden');
         } else {
-            // Simulated Login success, setting token
-            authToken = "MOCK_COGNITO_ID_TOKEN";
-            authMessage.style.color = 'green';
-            authMessage.textContent = 'Login successful!';
-            
-            document.getElementById('auth-section').classList.add('hidden');
-            document.getElementById('ticket-section').classList.remove('hidden');
+            authMode = 'login';
+            authTitle.textContent = 'Login';
+            authSubmitBtn.textContent = 'Login';
+            toggleAuthBtn.textContent = "Don't have an account? Register";
+            verificationField.classList.add('hidden');
         }
     });
 
-    // Handle ticket submission
+    // Handle Auth Form Submission (Real AWS Cognito Calls)
+    document.getElementById('auth-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        const code = document.getElementById('code').value;
+
+        authMessage.style.color = '#555';
+
+        if (authMode === 'register') {
+            authMessage.textContent = 'Registering account...';
+            const attributeList = [
+                new AmazonCognitoIdentity.CognitoUserAttribute({ Name: 'email', Value: email })
+            ];
+
+            userPool.signUp(email, password, attributeList, null, function(err, result) {
+                if (err) {
+                    authMessage.style.color = 'red';
+                    authMessage.textContent = err.message || JSON.stringify(err);
+                    return;
+                }
+                registeredEmail = email;
+                authMessage.style.color = 'green';
+                authMessage.textContent = 'Registration successful! Enter the confirmation code sent to your email.';
+                
+                // Switch to verification mode
+                authMode = 'verify';
+                authTitle.textContent = 'Verify Email';
+                authSubmitBtn.textContent = 'Confirm Code';
+                verificationField.classList.remove('hidden');
+                toggleAuthBtn.classList.add('hidden');
+            });
+
+        } else if (authMode === 'verify') {
+            authMessage.textContent = 'Verifying code...';
+            const userData = { Username: registeredEmail || email, Pool: userPool };
+            const cognitoUser = new AmazonCognitoIdentity.CognitoUser(userData);
+
+            cognitoUser.confirmRegistration(code, true, function(err, result) {
+                if (err) {
+                    authMessage.style.color = 'red';
+                    authMessage.textContent = err.message || JSON.stringify(err);
+                    return;
+                }
+                authMessage.style.color = 'green';
+                authMessage.textContent = 'Email verified successfully! You can now login.';
+                
+                // Switch back to login mode
+                authMode = 'login';
+                authTitle.textContent = 'Login';
+                authSubmitBtn.textContent = 'Login';
+                verificationField.classList.add('hidden');
+                toggleAuthBtn.classList.remove('hidden');
+            });
+
+        } else {
+            // Real Login
+            authMessage.textContent = 'Logging in...';
+            const authenticationData = { Username: email, Password: password };
+            const authenticationDetails = new AmazonCognitoIdentity.AuthenticationDetails(authenticationData);
+            
+            const userData = { Username: email, Pool: userPool };
+            const cognitoUser = new AmazonCognitoIdentity.CognitoUser(userData);
+
+            cognitoUser.authenticateUser(authenticationDetails, {
+                onSuccess: function(result) {
+                    validIdToken = result.getIdToken().getJwtToken();
+                    authMessage.style.color = 'green';
+                    authMessage.textContent = 'Login successful!';
+                    
+                    // Hide auth box and show ticket form
+                    document.getElementById('auth-section').classList.add('hidden');
+                    document.getElementById('ticket-section').classList.remove('hidden');
+                },
+                onFailure: function(err) {
+                    authMessage.style.color = 'red';
+                    authMessage.textContent = err.message || JSON.stringify(err);
+                },
+            });
+        }
+    });
+
+    // Handle ticket submission using the real JWT token
     document.getElementById('ticket-form').addEventListener('submit', async function(e) {
         e.preventDefault();
         
@@ -111,7 +197,7 @@
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': authToken
+                    'Authorization': validIdToken
                 },
                 body: JSON.stringify({ subject, description })
             });
