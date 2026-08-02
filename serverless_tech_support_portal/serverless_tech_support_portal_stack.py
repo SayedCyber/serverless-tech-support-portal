@@ -172,11 +172,14 @@ def handler(event, context):
             )
         )
 
-        # 3.1 Create Cognito Authorizer for API Gateway security
+        # 3.1 Create Cognito Authorizer for API Gateway security and attach it to the default root/proxy method
         auth = apigw.CognitoUserPoolsAuthorizer(
             self, "PortalAuthorizer",
             cognito_user_pools=[user_pool]
         )
+
+        # Attach the authorizer to the proxy resource method
+        api.root.add_method("ANY", apigw.LambdaIntegration(my_lambda), authorizer=auth, authorization_type=apigw.AuthorizationType.COGNITO)
 
         # 4. Create an S3 bucket to host the static website frontend
         site_bucket = s3.Bucket(
