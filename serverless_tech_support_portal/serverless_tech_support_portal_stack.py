@@ -160,7 +160,12 @@ def handler(event, context):
         my_lambda.add_environment("QUEUE_URL", ticket_queue.queue_url)
         my_lambda.add_environment("TOPIC_ARN", ticket_topic.topic_arn)
 
-        # 3. Create API Gateway to expose the Lambda function via HTTP with CORS enabled
+       # 3. Create Cognito Authorizer and attach it globally via default_method_options
+        auth = apigw.CognitoUserPoolsAuthorizer(
+            self, "PortalAuthorizer",
+            cognito_user_pools=[user_pool]
+        )
+
         api = apigw.LambdaRestApi(
             self, "SupportApi",
             handler=my_lambda,
@@ -169,18 +174,14 @@ def handler(event, context):
                 allow_origins=apigw.Cors.ALL_ORIGINS,
                 allow_methods=apigw.Cors.ALL_METHODS,
                 allow_headers=["Content-Type", "Authorization"]
+            ),
+            default_method_options=apigw.MethodOptions(
+                authorizer=auth,
+                authorization_type=apigw.AuthorizationType.COGNITO
             )
         )
 
-        # 3.1 Create Cognito Authorizer for API Gateway security and attach it to the default root/proxy method
-        auth = apigw.CognitoUserPoolsAuthorizer(
-            self, "PortalAuthorizer",
-            cognito_user_pools=[user_pool]
-        )
-
-        # Attach the authorizer to the proxy resource method
-        api.root.add_method("ANY", apigw.LambdaIntegration(my_lambda), authorizer=auth, authorization_type=apigw.AuthorizationType.COGNITO)
-
+        
         # 4. Create an S3 bucket to host the static website frontend
         site_bucket = s3.Bucket(
             self, "TicketSiteBucket",
