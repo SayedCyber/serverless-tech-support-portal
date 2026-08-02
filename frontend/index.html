@@ -29,6 +29,14 @@
         <p id="auth-msg" class="success"></p>
     </div>
 
+    <!-- Confirm Registration Section -->
+    <div id="confirm-section" class="hidden">
+        <h3>Confirm Your Account</h3>
+        <input type="text" id="verification-code" placeholder="Enter Code from Email">
+        <button onclick="confirmAccount()">Confirm Account</button>
+        <p id="confirm-msg" class="success"></p>
+    </div>
+
     <!-- Ticket Section (Hidden until logged in) -->
     <div id="ticket-section" class="hidden">
         <h3>Create Support Ticket</h3>
@@ -42,7 +50,6 @@
 <!-- AWS SDK for Cognito and API calls -->
 <script src="https://cdn.jsdelivr.net/npm/amazon-cognito-identity-js@5.2.11/dist/amazon-cognito-identity.min.js"></script>
 <script>
-    // Replace these values with your CDK deployment outputs
     const poolData = {
         UserPoolId: 'us-east-1_ZVVHgGJTF', 
         ClientId: '4i44s2377pt8954r9nma4v03ej'      
@@ -51,7 +58,6 @@
     const userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
     let idToken = '';
 
-    // Function to handle user sign-up
     function signUp() {
         const email = document.getElementById('email').value;
         const password = document.getElementById('password').value;
@@ -65,11 +71,32 @@
                 document.getElementById('auth-msg').innerText = err.message || JSON.stringify(err);
                 return;
             }
-            document.getElementById('auth-msg').innerText = 'Registration successful! Please check your email and login.';
+            document.getElementById('auth-msg').innerText = 'Registration successful! Please enter your code below.';
+            document.getElementById('auth-section').classList.add('hidden');
+            document.getElementById('confirm-section').classList.remove('hidden');
         });
     }
 
-    // Function to handle user sign-in and retrieve JWT token
+    function confirmAccount() {
+        const email = document.getElementById('email').value;
+        const code = document.getElementById('verification-code').value;
+
+        const userData = { Username: email, Pool: userPool };
+        const cognitoUser = new AmazonCognitoIdentity.CognitoUser(userData);
+
+        cognitoUser.confirmRegistration(code, true, (err, result) => {
+            if (err) {
+                document.getElementById('confirm-msg').innerText = err.message || JSON.stringify(err);
+                return;
+            }
+            document.getElementById('confirm-msg').innerText = 'Account confirmed successfully! You can now login.';
+            setTimeout(() => {
+                document.getElementById('confirm-section').classList.add('hidden');
+                document.getElementById('auth-section').classList.remove('hidden');
+            }, 2000);
+        });
+    }
+
     function signIn() {
         const email = document.getElementById('email').value;
         const password = document.getElementById('password').value;
@@ -95,7 +122,6 @@
         });
     }
 
-    // Function to create a support ticket via API Gateway with authorization header
     async function createTicket() {
         const subject = document.getElementById('subject').value;
         const description = document.getElementById('description').value;
@@ -106,7 +132,7 @@
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': idToken // Send the JWT token for authentication
+                    'Authorization': idToken 
                 },
                 body: JSON.stringify({ subject, description })
             });
